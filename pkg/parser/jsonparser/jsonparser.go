@@ -33,11 +33,14 @@ func (j *JsonParser) ParseString(line string) (map[string]string, error) {
 	end := strings.LastIndex(l, "}")
 	if start != -1 && end != -1 && end > start {
 		candidate := l[start : end+1]
-		if uerr := json.Unmarshal([]byte(candidate), &parsed); uerr == nil {
-			return toStringMap(parsed), nil
+		// Try to unmarshal the candidate into a fresh map
+		var fallback map[string]interface{}
+		if uerr := json.Unmarshal([]byte(candidate), &fallback); uerr == nil {
+			return toStringMap(fallback), nil
+		} else {
+			// combine errors for better diagnostics
+			err = fmt.Errorf("%v; fallback candidate parse err: %w", err, uerr)
 		}
-		// keep original err but prefer to return the more specific one if needed
-		err = fmt.Errorf("%v; fallback candidate parse err: %w", err, uerr)
 	}
 
 	return nil, fmt.Errorf("json log parsing err: %w", err)
