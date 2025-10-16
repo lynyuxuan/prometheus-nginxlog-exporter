@@ -3,6 +3,7 @@ package jsonparser
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // JsonParser parse a JSON string.
@@ -17,11 +18,32 @@ func NewJsonParser() *JsonParser {
 // The value in the map is not necessarily a string, so it needs to be converted.
 func (j *JsonParser) ParseString(line string) (map[string]string, error) {
 	var parsed map[string]interface{}
+
+	// First, try to unmarshal the whole line (fast path for pure-JSON lines)
 	err := json.Unmarshal([]byte(line), &parsed)
-	if err != nil {
-		return nil, fmt.Errorf("json log parsing err: %w", err)
+	if err == nil {
+		return toStringMap(parsed), nil
 	}
 
+	// If full-line unmarshal failed, try to extract a JSON substring.
+	// This handles lines like: "<timestamp> stdout F { ... }"
+	l := strings.TrimSpace(line)
+	// find first '{' and last '}'
+	start := strings.Index(l, "{")
+	end := strings.LastIndex(l, "}")
+	if start != -1 && end != -1 && end > start {
+		candidate := l[start : end+1]
+		if uerr := json.Unmarshal([]byte(candidate), &parsed); uerr == nil {
+			return toStringMap(parsed), nil
+		}
+		// keep original err but prefer to return the more specific one if needed
+		err = fmt.Errorf("%v; fallback candidate parse err: %w", err, uerr)
+	}
+
+	return nil, fmt.Errorf("json log parsing err: %w", err)
+}
+
+func toStringMap(parsed map[string]interface{}) map[string]string {
 	fields := make(map[string]string, len(parsed))
 	for k, v := range parsed {
 		if s, ok := v.(string); ok {
@@ -30,5 +52,5 @@ func (j *JsonParser) ParseString(line string) (map[string]string, error) {
 			fields[k] = fmt.Sprintf("%v", v)
 		}
 	}
-	return fields, nil
+	return fields
 }
